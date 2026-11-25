@@ -125,6 +125,67 @@ function ChapterVisual({ project, chapter, eager, onExpand }) {
   );
 }
 
+// A desktop wheel gesture advances just one chapter. Allow long text to
+// scroll first and ignore the inertial tail of a trackpad gesture.
+function createChapterWheelHandler({ getViewportHeight, getIndex, getCount, advance }) {
+  const idleMs = 180;
+  const threshold = 40;
+  const cooldownMs = 380;
+  let lastWheelAt = -Infinity;
+  let lastAdvanceAt = -Infinity;
+  let direction = 0;
+  let distance = 0;
+  let consumed = false;
+  let readingGesture = false;
+
+  return event => {
+    if (event.ctrlKey || !event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    const now = performance.now();
+    const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? getViewportHeight() : 1;
+    const delta = event.deltaY * scale;
+    const nextDirection = Math.sign(delta);
+    if (now - lastWheelAt > idleMs || (nextDirection !== direction && Math.abs(delta) >= threshold)) {
+      direction = nextDirection;
+      distance = 0;
+      consumed = false;
+      readingGesture = false;
+    }
+    lastWheelAt = now;
+
+    const pane = event.target.closest?.('.cs-copy-scroll');
+    const remaining = pane && (nextDirection > 0
+      ? pane.scrollHeight - pane.clientHeight - pane.scrollTop
+      : pane.scrollTop);
+    const canRead = remaining > 1;
+    if (readingGesture || (!consumed && canRead)) {
+      readingGesture = true;
+      // A single gesture should not both finish a long paragraph and start
+      // the next slide. The next deliberate gesture will advance.
+      if (!canRead) event.preventDefault();
+      return;
+    }
+
+    // Scroll the chapter viewport through the same smooth native scroll
+    // used by the Next/Previous and index controls.
+    event.preventDefault();
+    if (consumed) return;
+    if (nextDirection !== direction) {
+      direction = nextDirection;
+      distance = 0;
+    }
+    distance += Math.abs(delta);
+    if (distance < threshold) return;
+    consumed = true;
+    if (now - lastAdvanceAt < cooldownMs) return;
+
+    const index = getIndex();
+    const destination = Math.max(0, Math.min(getCount() - 1, index + direction));
+    if (destination === index) return;
+    lastAdvanceAt = now;
+    advance(destination);
+  };
+}
+
 export default function CaseStudy({ project, onClose, onOpen, relatedStudies, renderActions }) {
   const chapters = useMemo(() => [...buildCaseStudyChapters(project), relatedChapter], [project]);
   const [active, setActive] = useState(0);
@@ -142,6 +203,20 @@ export default function CaseStudy({ project, onClose, onOpen, relatedStudies, re
     setIndexOpen(false);
     if (target) scroller.scrollTo({ top: target.offsetTop, behavior: reduced() ? 'instant' : 'smooth' });
   };
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    // Mobile/tablet narrow layouts keep their ordinary native scrolling.
+    if (!scroller || continuous || expanded || indexOpen) return;
+    const onWheel = createChapterWheelHandler({
+      getViewportHeight: () => scroller.clientHeight,
+      getIndex: () => activeRef.current,
+      getCount: () => chapters.length,
+      advance: goTo,
+    });
+    scroller.addEventListener('wheel', onWheel, { passive: false });
+    return () => scroller.removeEventListener('wheel', onWheel);
+  }, [continuous, expanded, indexOpen, chapters]);
 
   useEffect(() => {
     if (!indexOpen) return;
@@ -250,7 +325,8 @@ export default function CaseStudy({ project, onClose, onOpen, relatedStudies, re
   };
 
   return createPortal(<div className="cs-case" ref={rootRef} role="dialog" aria-modal="true" aria-label={`${project.title} case study`} data-open="true" style={{ '--case-accent': project.accent }} onKeyDown={onKeyDown}>
-    <style>{styles}</style><div className="cs-backdrop" aria-hidden="true" />
+    <style>{styles}</style>
+    <div className="cs-window-mask" aria-hidden="true"><span /><span /></div>
     <header className="cs-topbar">
       {renderActions(closeRef)}
       <span className="cs-wordmark">
