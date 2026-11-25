@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Demo article cover">
+  <rect width="800" height="600" fill="#1c1c1c"/>
+  <circle cx="400" cy="300" r="150" fill="#3a342e"/>
+  <circle cx="400" cy="300" r="70" fill="#e6e2dd"/>
+  <rect x="120" y="460" width="220" height="18" rx="9" fill="#6e6860"/>
+</svg>
