@@ -6,14 +6,14 @@
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* Immersive revision: the world and its single invitation fill the screen. */
-.world-app,.scene-fallback{background:linear-gradient(180deg,#9eb4c0 0%,#5a7384 38%,#243948 62%,#0c141c 100%)}
+.world-app,.scene-fallback{background:#000}
 .header{justify-content:flex-end;z-index:6}
 .join-button{color:#172f3b;gap:15px;font-size:14px}
 .join-label{display:inline}
 .plus-icon{border-color:rgba(25,48,63,.4);background:rgba(187,204,209,.08)}
 .grain{opacity:.115;mix-blend-mode:soft-light}
 .edge-shade{background:radial-gradient(ellipse at 50% 42%,transparent 42%,rgba(4,12,20,.08) 100%)}
-.loading{background:linear-gradient(#afc0c3,#456271 57%,#1c3545)}
+.loading{background:#000}
 .message{background:rgba(13,32,44,.64);border-color:rgba(179,207,218,.15);box-shadow:0 15px 75px rgba(0,10,22,.16)}
 .message-top,.dialog-header{justify-content:flex-end}
 .message-text{margin-top:8px}

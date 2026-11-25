@@ -926,16 +926,24 @@ function ContactHeart() {
     const root = el.closest("[data-open]");
     let frame = 0;
     let dead = false;
-    const tick = () => {
+    let previousTime = performance.now(), lastDraw = -Infinity;
+    renderer.render(scene, camera);
+    const tick = (now) => {
       if (dead) return;
+      const elapsed = Math.min(50, now - previousTime);
+      previousTime = now;
       const open = !root || root.getAttribute("data-open") === "true";
-      if (open) {
-        if (!reduce) mesh.rotation.y += 0.016;
-        renderer.render(scene, camera);
+      const turning = root?.getAttribute("data-motion") === "moving";
+      if (open && !turning && !document.hidden) {
+        mesh.rotation.y += elapsed * 0.00096;
+        if (now - lastDraw >= 1000 / 30) {
+          renderer.render(scene, camera);
+          lastDraw = now;
+        }
       }
       frame = requestAnimationFrame(tick);
     };
-    tick();
+    if (!reduce) frame = requestAnimationFrame(tick);
 
     return () => {
       dead = true;
@@ -2038,7 +2046,7 @@ function Radar({ values, active, hover, onPick, onHover }) {
   );
 }
 
-function RangeDisc() {
+function RangeDisc({ paused }) {
   const rootRef = useRef(null);
   const videoRef = useRef(null);
 
@@ -2046,31 +2054,48 @@ function RangeDisc() {
     const root = rootRef.current;
     const video = videoRef.current;
     if (!root || !video) return;
+    if (paused) {
+      video.pause();
+      return;
+    }
+    if (video.paused) video.play().catch(() => {});
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let raf = 0;
+    let prevMetalIndex = -1;
     const frame = () => {
       const duration = video.duration;
       if (duration && Number.isFinite(duration) && duration > 0) {
         const lap = video.currentTime / duration;
-        const deg = (lap - Math.floor(lap)) * 360;
+        const fraction = lap - Math.floor(lap);
+        const deg = fraction * 360;
         root.style.setProperty("--sweep", `${deg}deg`);
+        // Cross-fade twelve offline-rendered studio-light directions.
+        // The reflection stays tied to the environment as the metal moves.
+        const metalFrame = fraction * 12;
+        const metalIndex = Math.floor(metalFrame) % 12;
+        if (metalIndex !== prevMetalIndex) {
+          root.style.setProperty("--metal-position", `${metalIndex * 100 / 11}%`);
+          root.style.setProperty("--metal-next-position", `${((metalIndex + 1) % 12) * 100 / 11}%`);
+          prevMetalIndex = metalIndex;
+        }
+        root.style.setProperty("--metal-mix", `${metalFrame - Math.floor(metalFrame)}`);
       }
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [paused]);
 
   return (
     <div className="bl-profile-video" ref={rootRef}>
+      <span className="bl-disc-ambient" aria-hidden="true" />
       <span className="bl-disc-glow" aria-hidden="true" />
       <span className="bl-disc-glass" aria-hidden="true" />
-      <span className="bl-disc-wash" aria-hidden="true" />
       {introVideo ? (
         <video
           ref={videoRef}
           src={introVideo}
-          autoPlay
+          autoPlay={!paused}
           muted
           loop
           playsInline
@@ -2087,7 +2112,7 @@ function RangeDisc() {
   );
 }
 
-function ProfilePanel({ open, onClose }) {
+function ProfilePanel({ open, onClose, paused = false }) {
   const [active, setActive] = useState(-1);
   const [hover, setHover] = useState(-1);
   const [job, setJob] = useState(0);
@@ -2125,7 +2150,7 @@ function ProfilePanel({ open, onClose }) {
     <aside className="bl-profile" data-open={open ? "true" : "false"} aria-hidden={!open}>
       <div className="bl-profile-body">
         <div className="bl-profile-scroll">
-        <RangeDisc />
+        <RangeDisc paused={!open || paused} />
         <div className="bl-profile-inner">
         <div className="bl-profile-head">
           <span className="bl-profile-title">Range</span>
@@ -4362,18 +4387,25 @@ function Dashboard() {
         }
 
         .bl-widget-action { position:relative; display:flex; }
+        /* The translucent surface of the ideation board button. */
+        .bl-widget-pill {
+          background:rgba(255,255,255,0.10);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,0.18);
+        }
+        .bl-widget-disc {
+          background:rgba(255,255,255,0.14);
+          box-shadow:inset 0 1px 0 rgba(255,255,255,0.22);
+        }
         .bl-widget-pill {
           flex:1; display:flex; align-items:center; justify-content:space-between; gap:8px;
           height:34px; padding:0 4px 0 13px; white-space:nowrap;
-          border-radius:999px; background:rgba(255,255,255,0.1);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+          border-radius:999px;
           font-family:${t.sans}; font-size:11.5px; color:${t.fg};
         }
         .bl-widget-disc {
           display:flex; align-items:center; justify-content:center;
           width:26px; height:26px; flex-shrink:0; border-radius:999px;
-          background:rgba(255,255,255,0.14); color:${t.fg};
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);
+          color:${t.fg};
         }
 
         /* the range widget: a chunky brown-metal pill with a chrome asterisk */
@@ -4450,80 +4482,101 @@ function Dashboard() {
         .bl-profile {
           position:relative;
           width:auto; flex:1; min-width:0; display:flex; flex-direction:column;
-          background:${t.rail}; border-radius:999px; overflow:hidden;
+          /* Copper tones from the ideation board, fading into the black rail. */
+          background:linear-gradient(180deg,#6A5349 0%,#40322B 32%,${t.rail} 72%);
+          border-radius:999px; overflow:hidden;
           padding:8px 8px 10px; box-sizing:border-box;
         }
 
         .bl-profile-video {
           --sweep: 0deg;
+          --video-inset: 4.2%;
+          --metal-position: 0%;
+          --metal-next-position: 9.090909%;
+          --metal-mix: 0;
           position:relative; width:100%; aspect-ratio:1/1; flex-shrink:0;
           border-radius:999px; overflow:hidden; background:transparent;
         }
-        .bl-disc-glow {
-          position:absolute; inset:0; border-radius:50%; pointer-events:none; z-index:2;
-          background: conic-gradient(
-            from 0deg,
-            rgba(255, 214, 70, 0) 0deg,
-            rgba(255, 196, 40, 0.42) var(--sweep),
-            transparent var(--sweep)
-          );
-          mix-blend-mode: screen;
-          -webkit-mask-image: radial-gradient(circle closest-side, transparent 0 91.8%, #000 93.4% 98.2%, transparent 100%);
-          mask-image: radial-gradient(circle closest-side, transparent 0 91.8%, #000 93.4% 98.2%, transparent 100%);
+        /* Full glass disc below the centered video; the trail shines
+           through its exposed outer edge. Only trail and pointer rotate. */
+        .bl-disc-ambient,
+        .bl-disc-glow,
+        .bl-disc-glass {
+          position:absolute; inset:0; border-radius:50%; pointer-events:none;
+        }
+        /* Soft light sources under the glass. They get diffused by the
+           actual backdrop filter rather than painted onto the surface. */
+        .bl-disc-ambient {
+          z-index:1;
+          background:
+            radial-gradient(ellipse 4.5% 9.7% at 8.2% 26.5%,
+              rgba(248,245,220,.98) 0%,rgba(248,245,220,.88) 36%,
+              rgba(248,245,220,.16) 78%,transparent 100%),
+            radial-gradient(ellipse 5% 11% at 94% 31%,
+              rgba(205,158,129,.74) 0%,rgba(205,158,129,.35) 40%,transparent 100%);
+        }
+        .bl-disc-glow { z-index:2; transform:rotate(var(--sweep)); will-change:transform; }
+        .bl-disc-glow::before,
+        .bl-disc-glow::after {
+          content:""; position:absolute; inset:0; border-radius:50%;
+          /* The trail fades backwards and ends underneath the opaque
+             metal pointer. No visible gap or light ahead of the pointer. */
+          background:conic-gradient(from -105deg,
+            transparent 0deg,
+            rgba(222,175,36,.12) 23deg,
+            rgba(245,205,59,.48) 55deg,
+            rgba(255,222,85,.88) 84deg,
+            rgba(255,229,111,.94) 97deg,
+            rgba(255,229,111,.94) 103.8deg,
+            transparent 105deg,
+            transparent 360deg);
+        }
+        .bl-disc-glow::before {
+          opacity:.85;
+          -webkit-mask-image:radial-gradient(circle closest-side,transparent 0 91.9%,#0003 93.2%,#000b 94.7%,#000 96.2%,#0008 97.8%,transparent 99.4%);
+          mask-image:radial-gradient(circle closest-side,transparent 0 91.9%,#0003 93.2%,#000b 94.7%,#000 96.2%,#0008 97.8%,transparent 99.4%);
+        }
+        .bl-disc-glow::after {
+          opacity:.7;
+          -webkit-mask-image:radial-gradient(circle closest-side,transparent 0 94.3%,#0003 95%,#000 96.1%,#0008 97.1%,transparent 98.1%);
+          mask-image:radial-gradient(circle closest-side,transparent 0 94.3%,#0003 95%,#000 96.1%,#0008 97.1%,transparent 98.1%);
         }
         .bl-disc-glass {
-          position:absolute; inset:0; border-radius:50%; pointer-events:none; z-index:3;
-          background:
-            linear-gradient(155deg,
-              rgba(255,255,255,0.7) 0%,
-              rgba(255,255,255,0.16) 18%,
-              rgba(255,255,255,0.04) 46%,
-              rgba(255,255,255,0.1) 72%,
-              rgba(255,255,255,0.55) 100%);
-          -webkit-mask-image: radial-gradient(circle closest-side,
-            transparent 0 91.6%,
-            rgba(0,0,0,0.45) 93%,
-            #000 94.2% 98%,
-            rgba(0,0,0,0.4) 99%,
-            transparent 100%);
-          mask-image: radial-gradient(circle closest-side,
-            transparent 0 91.6%,
-            rgba(0,0,0,0.45) 93%,
-            #000 94.2% 98%,
-            rgba(0,0,0,0.4) 99%,
-            transparent 100%);
-        }
-        .bl-disc-wash {
-          position:absolute; inset:0; border-radius:50%; pointer-events:none; z-index:4;
-          background: conic-gradient(
-            from 0deg,
-            rgba(255, 236, 150, 0.16) 0deg,
-            rgba(255, 210, 60, 0.5) var(--sweep),
-            transparent var(--sweep)
-          );
-          mix-blend-mode: screen;
-          -webkit-mask-image: radial-gradient(circle closest-side, transparent 0 91.6%, #000 93.2% 98.6%, transparent 100%);
-          mask-image: radial-gradient(circle closest-side, transparent 0 91.6%, #000 93.2% 98.6%, transparent 100%);
+          z-index:3; inset:.3%;
+          /* Smoky glassmorphism: a live blurred backdrop, a transparent
+             neutral tint and a very thin, soft bevel. No baked texture. */
+          background:linear-gradient(155deg,
+            rgba(17,17,15,.18) 0%,rgba(12,13,12,.28) 48%,rgba(24,22,15,.16) 100%);
+          -webkit-backdrop-filter:blur(3.2px) saturate(1.18);
+          backdrop-filter:blur(3.2px) saturate(1.18);
+          border:1px solid rgba(255,255,255,.095); box-sizing:border-box;
+          box-shadow:inset 0 1px 1px rgba(0,0,0,.27),
+            inset 0 -1px 1px rgba(235,212,127,.14),
+            inset 0 0 7px rgba(0,0,0,.16);
         }
         .bl-disc-ticker {
-          position:absolute; inset:0; border-radius:50%; pointer-events:none; z-index:5;
-          transform: rotate(var(--sweep));
+          position:absolute; inset:0; border-radius:50%; pointer-events:none; z-index:6;
+          transform:rotate(var(--sweep)); will-change:transform;
         }
-        .bl-disc-ticker::before {
-          content:""; position:absolute; left:50%; top:1%;
-          width:12px; height:12px; margin-left:-6px; border-radius:50%;
-          background: radial-gradient(circle, rgba(255, 250, 210, 0.9) 0%, rgba(255, 196, 40, 0.35) 46%, transparent 70%);
-        }
+        .bl-disc-ticker::before,
         .bl-disc-ticker::after {
-          content:""; position:absolute; left:50%; top:0.5%;
-          width:4px; height:2%; margin-left:-2px; border-radius:999px;
-          background: linear-gradient(180deg, #3a3a3a 0%, #111 100%);
-          box-shadow: 0 0 0 1px rgba(255,255,255,0.35), 0 1px 2px rgba(0,0,0,0.45);
+          content:""; position:absolute; left:50%; top:1.83%;
+          width:4.75%; height:4.75%;
+          transform:translate(-50%,-50%);
+          background-image:url('/video-ticker-metal.webp');
+          background-size:1200% 100%;
+          background-repeat:no-repeat;
+          filter:drop-shadow(0 1px 1px rgba(0,0,0,.75));
         }
+        .bl-disc-ticker::before { background-position:var(--metal-position) 0; }
+        .bl-disc-ticker::after { background-position:var(--metal-next-position) 0; opacity:var(--metal-mix); }
         .bl-profile-video video,
         .bl-profile-video .bl-profile-video-ph {
-          position:absolute; top:1.2%; left:1.2%; width:97.6%; height:97.6%; z-index:1;
+          position:absolute; inset:var(--video-inset);
+          width:calc(100% - 2 * var(--video-inset));
+          height:calc(100% - 2 * var(--video-inset)); z-index:5;
           border-radius:50%; object-fit:cover;
+          box-shadow:0 1px 3px rgba(0,0,0,.24);
         }
         .bl-profile-video-ph {
           position:absolute; inset:0; display:flex; flex-direction:column;
@@ -5790,7 +5843,7 @@ function Dashboard() {
             />
           </main>
 
-          <ProfilePanel open={profile} onClose={() => setProfile(false)} />
+          <ProfilePanel open={profile} onClose={() => setProfile(false)} paused={!!open} />
 
           <Board
             open={board}
@@ -5838,7 +5891,7 @@ export default function PortfolioDashboard() {
     <div className="bl-intro">
       <style>{`
         .bl-intro {
-          position:relative; height:100vh; overflow:hidden; background:#0c141c;
+          position:relative; height:100vh; overflow:hidden; background:#000;
           font-family:'Inter','Helvetica Neue',Arial,sans-serif;
         }
         .bl-enter {

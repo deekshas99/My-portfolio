@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { buildCaseStudyChapters } from './caseStudyChapters.mjs';
+import { CHAPTER_MOTION_MS, createChapterWheelHandler } from './caseStudyMotion.mjs';
+import { desktopSlideWindow, getCaseStudyImageProps } from './caseStudyMedia.mjs';
 import CaseStudyIndexRows from './CaseStudyIndexRows';
 import CaseStudyStats from './CaseStudyStats';
 import styles from './CaseStudy.css?inline';
@@ -60,20 +62,20 @@ function ChapterNavigation({ chapters, index, goTo, onFinish, indexOpen, setInde
   );
 }
 
-function RelatedStudies({ studies, onOpen }) {
+const RelatedStudies = memo(function RelatedStudies({ studies, onOpen }) {
   return (
     <div className="cs-related-grid">
       {studies.map(({ project, image }) => (
         <button type="button" className="cs-study-tile" key={project.id} onClick={() => onOpen(project)}
           style={{ '--study-accent': project.accent }}>
-          {image && <img src={image} alt="" loading="lazy" decoding="async" />}
+          {image && <img {...getCaseStudyImageProps(image)} alt="" loading="lazy" decoding="async" />}
           <span className="cs-study-name">{project.title}</span>
           {project.role && <span className="cs-study-role">{project.role}</span>}
         </button>
       ))}
     </div>
   );
-}
+});
 
 function ChapterBlock({ block }) {
   if (block.type === 'list') {
@@ -111,37 +113,194 @@ function Overview({ project, chapter }) {
   </>;
 }
 
-function ChapterVisual({ project, chapter, eager, onExpand }) {
+const ChapterVisual = memo(function ChapterVisual({ project, chapter, eager, priority, onExpand }) {
   const caption = chapter.visualCount > 1 ? `${chapter.label}, visual ${chapter.visualIndex + 1}` : chapter.label;
 
   return (
     <figure className={`cs-visual${chapter.overview ? ' cs-visual-cover' : ''}${!chapter.image ? ' cs-visual-empty' : ''}`}>
       {chapter.image && <>
-        <img src={chapter.image} alt={`${project.title} — ${caption}`} loading={eager ? 'eager' : 'lazy'} decoding="async" />
-        <button type="button" className="cs-expand" onClick={onExpand} aria-label={`Enlarge ${caption} image`}>View image</button>
+        <img {...getCaseStudyImageProps(chapter.image)} alt={`${project.title} — ${caption}`} loading={eager ? 'eager' : 'lazy'} decoding="async" fetchPriority={priority} />
+        <button type="button" className="cs-expand" onClick={event => onExpand(event, chapter)} aria-label={`Enlarge ${caption} image`}>View image</button>
       </>}
       <figcaption><span>{chapter.label}</span><span>{project.title}</span></figcaption>
     </figure>
   );
-}
+});
 
 export default function CaseStudy({ project, onClose, onOpen, relatedStudies, renderActions }) {
   const chapters = useMemo(() => [...buildCaseStudyChapters(project), relatedChapter], [project]);
   const [active, setActive] = useState(0);
   const [continuous, setContinuous] = useState(() => window.matchMedia(narrowViewport).matches);
+  const [motion, setMotion] = useState(null);
+  const [settled, setSettled] = useState(0);
   const [expanded, setExpanded] = useState(null);
   const [indexOpen, setIndexOpen] = useState(false);
   const scrollRef = useRef(null), rootRef = useRef(null), activeRef = useRef(0);
   const closeRef = useRef(null), imageTrigger = useRef(null);
   const navigationRef = useRef(null), indexTriggerRef = useRef(null);
+  const movingRef = useRef(false), pendingRef = useRef(null), timerRef = useRef(null);
+  const navigateRef = useRef(null);
   const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const goTo = index => {
-    const scroller = scrollRef.current;
+  const compositorMotion = typeof Element.prototype.animate === 'function';
+
+  const showChapter = useCallback(index => {
+    activeRef.current = index;
+    setActive(index);
+  }, []);
+
+  const finishMotion = useCallback(() => {
+    if (!movingRef.current) return;
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    movingRef.current = false;
+    const queued = pendingRef.current;
+    pendingRef.current = null;
+    if (queued !== null && queued !== activeRef.current) navigateRef.current?.(queued);
+    else {
+      setMotion(null);
+      setSettled(activeRef.current);
+    }
+  }, []);
+
+  // On desktop both physical panels remain in the same grid cells. A request
+  // swaps just their contents, rather than scrolling a series of full frames.
+  // Keep one pending intentional step so wheel detents and fast clicks are
+  // responsive without interrupting an animation or jumping past content.
+  const goTo = useCallback(function navigate(index) {
     const destination = Math.max(0, Math.min(chapters.length - 1, index));
-    const target = scroller?.children[destination];
     setIndexOpen(false);
-    if (target) scroller.scrollTo({ top: target.offsetTop, behavior: reduced() ? 'instant' : 'smooth' });
-  };
+
+    if (continuous) {
+      const scroller = scrollRef.current;
+      const target = scroller?.children[destination];
+      if (target) scroller.scrollTo({ top: target.offsetTop, behavior: reduced() ? 'instant' : 'smooth' });
+      return;
+    }
+
+    if (movingRef.current) {
+      pendingRef.current = destination === activeRef.current ? null : destination;
+      return;
+    }
+    const previous = activeRef.current;
+    if (destination === previous) return;
+    // Keeping focus in the stationary stage avoids losing keyboard access
+    // when the slide holding the previously focused element becomes inert.
+    if (document.activeElement?.closest('.cs-slide')) {
+      rootRef.current?.querySelector('.cs-copy-stage')?.focus({ preventScroll: true });
+    }
+    if (reduced()) {
+      setMotion(null);
+      setSettled(destination);
+      showChapter(destination);
+      return;
+    }
+
+    movingRef.current = true;
+    const direction = destination > previous ? 1 : -1;
+    setMotion({ previous, direction });
+    showChapter(destination);
+
+  }, [chapters.length, continuous, showChapter]);
+
+  useLayoutEffect(() => { navigateRef.current = goTo; }, [goTo]);
+
+  // Finish from animation completion; the timer is only a safety net and
+  // starts after commit. Move just four compositor layers in the fixed panels.
+  useLayoutEffect(() => {
+    if (!motion || continuous) return;
+    const root = rootRef.current;
+    let cancelled = false;
+    const complete = () => { if (!cancelled) finishMotion(); };
+    const animations = [];
+    const incoming = root?.querySelector('.cs-visual-slide[data-state="active"]');
+    const onEnd = event => {
+      if (event.target === incoming && event.animationName === 'cs-content-enter') complete();
+    };
+    if (compositorMotion && root) {
+      for (const slide of root.querySelectorAll('.cs-slide[data-state="active"], .cs-slide[data-state="outgoing"]')) {
+        const entering = slide.dataset.state === 'active', distance = motion.direction * 100;
+        animations.push(slide.animate([
+          { transform: `translate3d(0,${entering ? distance : 0}%,0)` },
+          { transform: `translate3d(0,${entering ? 0 : -distance}%,0)` },
+        ], { duration: CHAPTER_MOTION_MS, easing: 'cubic-bezier(.22,.72,.2,1)', fill: 'both' }));
+      }
+      if (animations.length) Promise.allSettled(animations.map(animation => animation.finished)).then(complete);
+    } else incoming?.addEventListener('animationend', onEnd);
+    const timer = window.setTimeout(complete, CHAPTER_MOTION_MS + 35);
+    timerRef.current = timer;
+    return () => {
+      cancelled = true;
+      incoming?.removeEventListener('animationend', onEnd);
+      for (const animation of animations) animation.cancel();
+      window.clearTimeout(timer);
+      if (timerRef.current === timer) timerRef.current = null;
+    };
+  }, [motion, continuous, finishMotion, compositorMotion]);
+
+  const desktopIndices = useMemo(() => desktopSlideWindow(chapters.length, active, settled, motion?.previous ?? null),
+    [chapters.length, active, settled, motion]);
+  // Warm nearby panel-sized images while stationary, not mid-transition.
+  useEffect(() => {
+    if (continuous || motion) return;
+    let cancelled = false;
+    const root = rootRef.current;
+    const images = [...(root?.querySelectorAll('.cs-image-panel .cs-visual-slide img') || [])];
+    const warm = async () => {
+      for (const image of images) {
+        if (cancelled || root?.dataset.motion === 'moving') return;
+        if (typeof image.decode === 'function') await image.decode().catch(() => {});
+      }
+    };
+    const idle = typeof window.requestIdleCallback === 'function';
+    const work = idle ? window.requestIdleCallback(warm, { timeout: 100 }) : window.setTimeout(warm, 24);
+    return () => {
+      cancelled = true;
+      if (idle) window.cancelIdleCallback(work);
+      else window.clearTimeout(work);
+    };
+  }, [active, continuous, motion, settled]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    // Listen across both stationary panels; narrow screens scroll natively.
+    if (!root || continuous || expanded || indexOpen) return;
+    const onWheel = createChapterWheelHandler({
+      getViewportHeight: () => root.clientHeight,
+      isTurning: () => movingRef.current,
+      advance: direction => goTo(activeRef.current + direction),
+    });
+    let touch = null;
+    const onTouchStart = event => {
+      if (event.touches.length !== 1) { touch = null; return; }
+      const point = event.touches[0];
+      const pane = event.target.closest?.('.cs-copy-scroll');
+      touch = { x: point.clientX, y: point.clientY, pane, scrollTop: pane?.scrollTop || 0 };
+    };
+    const onTouchEnd = event => {
+      const start = touch;
+      touch = null;
+      if (!start || event.touches.length) return;
+      const point = event.changedTouches[0];
+      if (!point) return;
+      const dy = start.y - point.clientY;
+      if (Math.abs(dy) < 55 || Math.abs(dy) < Math.abs(start.x - point.clientX)) return;
+      // A swipe that was actually reading long text is not a page turn.
+      if (start.pane && (Math.abs(start.pane.scrollTop - start.scrollTop) > 2 ||
+        (dy > 0 ? start.pane.scrollHeight - start.pane.clientHeight - start.scrollTop > 1 : start.scrollTop > 1))) return;
+      goTo(activeRef.current + Math.sign(dy));
+    };
+    const cancelTouch = () => { touch = null; };
+    root.addEventListener('wheel', onWheel, { passive: false });
+    root.addEventListener('touchstart', onTouchStart, { passive: true });
+    root.addEventListener('touchend', onTouchEnd, { passive: true });
+    root.addEventListener('touchcancel', cancelTouch, { passive: true });
+    return () => {
+      root.removeEventListener('wheel', onWheel);
+      root.removeEventListener('touchstart', onTouchStart);
+      root.removeEventListener('touchend', onTouchEnd);
+      root.removeEventListener('touchcancel', cancelTouch);
+    };
+  }, [continuous, expanded, indexOpen, goTo]);
 
   useEffect(() => {
     if (!indexOpen) return;
@@ -159,6 +318,10 @@ export default function CaseStudy({ project, onClose, onOpen, relatedStudies, re
     document.addEventListener('pointerdown', dismiss);
     return () => document.removeEventListener('pointerdown', dismiss);
   }, [indexOpen]);
+  const expandChapter = useCallback((event, chapter) => {
+    imageTrigger.current = event.currentTarget;
+    setExpanded(chapter);
+  }, []);
   const closeImage = () => {
     setExpanded(null);
     imageTrigger.current?.focus({ preventScroll: true });
@@ -166,61 +329,72 @@ export default function CaseStudy({ project, onClose, onOpen, relatedStudies, re
 
   useEffect(() => {
     const media = window.matchMedia(narrowViewport);
-    const sync = () => setContinuous(media.matches);
-    sync();
+    const cancelMotion = () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+      movingRef.current = false;
+      pendingRef.current = null;
+    };
+    const sync = () => {
+      cancelMotion();
+      setMotion(null);
+      setSettled(activeRef.current);
+      setContinuous(media.matches);
+    };
     media.addEventListener('change', sync);
-    return () => media.removeEventListener('change', sync);
+    if (media.matches !== continuous) sync();
+    return () => {
+      media.removeEventListener('change', sync);
+      cancelMotion();
+    };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const previousFocus = document.activeElement;
     const app = document.getElementById('root'), wasInert = app?.inert;
-    if (app) app.inert = true;
+    const previousFlag = app?.getAttribute('data-case-study-active');
+    if (app) {
+      app.inert = true;
+      app.setAttribute('data-case-study-active', 'true');
+    }
     closeRef.current?.focus({ preventScroll: true });
     return () => {
-      if (app) app.inert = wasInert;
+      if (app) {
+        app.inert = wasInert;
+        if (previousFlag === null) app.removeAttribute('data-case-study-active');
+        else app.setAttribute('data-case-study-active', previousFlag);
+      }
       if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // Mobile/tablet: retain natural, continuous reading with the chapter
+    // name following the actual scroll position.
     const scroller = scrollRef.current;
+    if (!continuous || !scroller) return;
     const sections = [...scroller.children];
-    const showChapter = index => {
-      activeRef.current = index;
-      setActive(index);
+    const current = sections[activeRef.current];
+    if (current) scroller.scrollTop = current.offsetTop;
+    const syncChapter = () => {
+      const { scrollTop, clientHeight, scrollHeight } = scroller;
+      const atEnd = scrollTop > 0 && scrollHeight - scrollTop - clientHeight <= 1;
+      const readingLine = scrollTop + Math.min(clientHeight * .25, 120);
+      const index = atEnd
+        ? sections.length - 1
+        : Math.max(0, sections.findLastIndex(section => section.offsetTop <= readingLine));
+      if (index !== activeRef.current) showChapter(index);
     };
-
-    if (continuous) {
-      // A chapter may be taller than the viewport, so track its top instead
-      // of requiring a percentage of the card to be visible.
-      const syncChapter = () => {
-        const { scrollTop, clientHeight, scrollHeight } = scroller;
-        const atEnd = scrollTop > 0 && scrollHeight - scrollTop - clientHeight <= 1;
-        const readingLine = scrollTop + Math.min(clientHeight * .25, 120);
-        const index = atEnd
-          ? sections.length - 1
-          : Math.max(0, sections.findLastIndex(section => section.offsetTop <= readingLine));
-        if (index !== activeRef.current) showChapter(index);
-      };
-      const resize = new ResizeObserver(syncChapter);
-      resize.observe(scroller);
-      sections.forEach(section => resize.observe(section));
-      scroller.addEventListener('scroll', syncChapter, { passive: true });
-      syncChapter();
-      return () => {
-        resize.disconnect();
-        scroller.removeEventListener('scroll', syncChapter);
-      };
-    }
-
-    const observer = new IntersectionObserver(entries => {
-      const visible = entries.find(entry => entry.intersectionRatio > .55);
-      if (visible) showChapter(Number(visible.target.dataset.chapter));
-    }, { root: scroller, threshold: [.55] });
-    sections.forEach(section => observer.observe(section));
-    return () => observer.disconnect();
-  }, [chapters, continuous]);
+    const resize = new ResizeObserver(syncChapter);
+    resize.observe(scroller);
+    sections.forEach(section => resize.observe(section));
+    scroller.addEventListener('scroll', syncChapter, { passive: true });
+    syncChapter();
+    return () => {
+      resize.disconnect();
+      scroller.removeEventListener('scroll', syncChapter);
+    };
+  }, [chapters, continuous, showChapter]);
 
   const onKeyDown = event => {
     if (event.key === 'Escape') {
@@ -241,16 +415,22 @@ export default function CaseStudy({ project, onClose, onOpen, relatedStudies, re
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       return;
     }
-    if (continuous || expanded || indexOpen || event.target.closest('button, .cs-copy-scroll')) return;
+    if (continuous || expanded || indexOpen || event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
     const next = ['ArrowDown', 'PageDown', ' '].includes(event.key), previous = ['ArrowUp', 'PageUp'].includes(event.key);
+    if (event.key === ' ' && event.target.closest('button')) return;
     if (next || previous || event.key === 'Home' || event.key === 'End') {
+      const direction = previous || event.shiftKey ? -1 : 1;
+      const pane = event.target.closest('.cs-copy-scroll');
+      const canRead = pane && (direction > 0 ? pane.scrollHeight - pane.clientHeight - pane.scrollTop > 1 : pane.scrollTop > 1);
+      if (canRead && (next || previous)) return;
       event.preventDefault();
-      goTo(event.key === 'Home' ? 0 : event.key === 'End' ? chapters.length - 1 : activeRef.current + (previous || event.shiftKey ? -1 : 1));
+      goTo(event.key === 'Home' ? 0 : event.key === 'End' ? chapters.length - 1 : activeRef.current + direction);
     }
   };
 
-  return createPortal(<div className="cs-case" ref={rootRef} role="dialog" aria-modal="true" aria-label={`${project.title} case study`} data-open="true" style={{ '--case-accent': project.accent }} onKeyDown={onKeyDown}>
-    <style>{styles}</style><div className="cs-backdrop" aria-hidden="true" />
+  const slideState = index => active === index ? 'active' : motion?.previous === index ? 'outgoing' : 'inactive';
+
+  const header = (
     <header className="cs-topbar">
       {renderActions(closeRef)}
       <span className="cs-wordmark">
@@ -258,26 +438,9 @@ export default function CaseStudy({ project, onClose, onOpen, relatedStudies, re
         <span className="cs-star" aria-hidden="true">✳</span>
       </span>
     </header>
-    <div className="cs-scroll" ref={scrollRef} tabIndex={0} aria-label="Case study chapters">
-      {chapters.map((chapter, index) => <section className="cs-chapter" key={chapter.id} data-chapter={index} aria-labelledby={`${chapter.id}-title`} inert={!continuous && active !== index ? true : undefined}>
-        <div className={chapter.related ? 'cs-frame cs-frame-related' : 'cs-frame'}>
-          <div className={chapter.overview ? 'cs-copy cs-copy-overview' : 'cs-copy'}>
-            <div className="cs-copy-scroll" tabIndex={!continuous && active === index ? 0 : undefined}>
-              {chapter.overview ? <Overview project={project} chapter={chapter} /> : <>
-                <h2 id={`${chapter.id}-title`} className="cs-title">{chapter.title}</h2>
-                {chapter.blocks?.map((block, i) => <ChapterBlock block={block} key={i} />)}
-              </>}
-            </div>
-          </div>
-          {chapter.related ? <RelatedStudies studies={relatedStudies} onOpen={onOpen} /> : <ChapterVisual
-            project={project}
-            chapter={chapter}
-            eager={Math.abs(index - active) <= 1}
-            onExpand={event => { imageTrigger.current = event.currentTarget; setExpanded(chapter); }}
-          />}
-        </div>
-      </section>)}
-    </div>
+  );
+
+  const navigation = (
     <ChapterNavigation
       chapters={chapters}
       index={active}
@@ -288,6 +451,81 @@ export default function CaseStudy({ project, onClose, onOpen, relatedStudies, re
       navigationRef={navigationRef}
       triggerRef={indexTriggerRef}
     />
+  );
+
+  const renderCopy = (chapter, index, desktop) => (
+    <div
+      className={`cs-copy${chapter.overview ? ' cs-copy-overview' : ''}${desktop ? ' cs-slide' : ''}`}
+      key={chapter.id}
+      data-state={desktop ? slideState(index) : undefined}
+      inert={desktop && active !== index ? true : undefined}
+      role={desktop ? 'region' : undefined}
+      aria-labelledby={desktop ? `${chapter.id}-title` : undefined}
+    >
+      <div className="cs-copy-scroll" tabIndex={desktop && active === index ? 0 : undefined}>
+        {chapter.overview ? <Overview project={project} chapter={chapter} /> : <>
+          <h2 id={`${chapter.id}-title`} className="cs-title">{chapter.title}</h2>
+          {chapter.blocks?.map((block, i) => <ChapterBlock block={block} key={i} />)}
+        </>}
+      </div>
+    </div>
+  );
+
+  const renderVisual = (chapter, index) => chapter.related
+    ? <RelatedStudies studies={relatedStudies} onOpen={onOpen} />
+    : <ChapterVisual
+      project={project}
+      chapter={chapter}
+      eager={!continuous || Math.abs(index - active) <= 1}
+      priority={index === active ? 'high' : 'low'}
+      onExpand={expandChapter}
+    />;
+
+  return createPortal(<div
+    className={`cs-case ${continuous ? 'cs-continuous' : 'cs-paged'}`}
+    ref={rootRef}
+    role="dialog"
+    aria-modal="true"
+    aria-label={`${project.title} case study`}
+    data-open="true"
+    data-motion={motion ? 'moving' : 'idle'}
+    data-motion-engine={compositorMotion ? 'compositor' : 'css'}
+    style={{ '--case-accent': project.accent, '--cs-motion-ms': `${CHAPTER_MOTION_MS}ms`, '--cs-motion-offset': `${(motion?.direction || 1) * 100}%` }}
+    onKeyDown={onKeyDown}
+  >
+    <style>{styles}</style>
+    {continuous ? <>
+      {header}
+      <div className="cs-scroll" ref={scrollRef} tabIndex={0} aria-label="Case study chapters">
+        {chapters.map((chapter, index) => <section className="cs-chapter" key={chapter.id} aria-labelledby={`${chapter.id}-title`}>
+          <div className="cs-frame">
+            {renderCopy(chapter, index, false)}
+            {renderVisual(chapter, index)}
+          </div>
+        </section>)}
+      </div>
+      {navigation}
+    </> : (
+      <div className="cs-desktop-shell">
+        <section className="cs-writing-panel" aria-label="Case study writing">
+          {header}
+          <div className="cs-copy-stage" tabIndex={0} aria-label="Case study chapters">
+            {desktopIndices.map(index => renderCopy(chapters[index], index, true))}
+          </div>
+          {navigation}
+        </section>
+        <section className="cs-image-panel" aria-label="Case study images">
+          {desktopIndices.map(index => <div
+            className="cs-visual-slide cs-slide"
+            key={chapters[index].id}
+            data-state={slideState(index)}
+            inert={active !== index ? true : undefined}
+          >
+            {renderVisual(chapters[index], index)}
+          </div>)}
+        </section>
+      </div>
+    )}
     {expanded && <div className="cs-lightbox" role="dialog" aria-modal="true" aria-label={`${expanded.label} image`}>
       <button autoFocus onClick={closeImage}>Close image</button><img src={expanded.image} alt={`${project.title} — ${expanded.title}`}/>
     </div>}

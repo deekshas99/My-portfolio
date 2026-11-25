@@ -24,7 +24,7 @@ export const worldConfig = {
   peoplePerView: 8,
   mobilePeoplePerView: 4,
   typeIntervalMs: 32,
-  palette: { fog: '#0a1a22', floor: '#12301f', background: '#c4a479' },
+  palette: { fog: '#0a1a22', floor: '#12301f', background: '#000000' },
 };
 
 /** The white wire flower — hover text only, not counted among the planted messages. */

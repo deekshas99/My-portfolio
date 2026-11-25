@@ -3,8 +3,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import type { PerspectiveCamera } from 'three';
 import { Vector3 } from 'three';
 import type { Person } from '../lib/types';
-import { inviteWirePerson } from '../config';
-import Atmosphere from './Atmosphere';
+import { inviteWirePerson, worldConfig } from '../config';
 import Flower from './Flower';
 import Undergrowth from './Undergrowth';
 import WireInviteFlower from './WireInviteFlower';
@@ -36,7 +35,7 @@ function Garden(props: WorldProps) {
   useEffect(() => { props.onReady(); }, [props.onReady]);
   const inviteSpot = useMemo(() => new Vector3(mobile ? 0.2 : 0.45, 0, mobile ? 2.35 : 2.05), [mobile]);
   return <>
-    <Atmosphere paused={props.paused} reduced={props.reduced} />
+    <color attach="background" args={[worldConfig.palette.background]} />
     <Undergrowth mobile={mobile} paused={props.paused} reduced={props.reduced} />
     <WireInviteFlower
       position={inviteSpot}
