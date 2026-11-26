@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
-import { inviteWirePerson, worldConfig } from './config';
+import { worldConfig } from './config';
 import type { Person } from './lib/types';
 import { getApproved } from './lib/data';
 import { pagePeople } from './lib/core.mjs';
@@ -8,6 +8,7 @@ import { useFlowerHover } from './lib/useFlowerHover';
 import Join from './components/Join';
 import Admin from './components/Admin';
 import Dialog from './components/Dialog';
+import GardenReadout from './components/GardenReadout';
 import { registerWorldTools } from './lib/webmcp';
 import { supportsWebGL2 } from '../lib/webgl';
 const World=lazy(()=>import('./scene/World'));
@@ -35,7 +36,7 @@ export default function App(){
   const close=useCallback(()=>{clearAll();document.body.style.cursor='';},[clearAll]);
   const select=useCallback((id:string)=>{
     if(!id){pin(null);return;}
-    const person=[worldConfig.owner,...worldConfig.seeded,...approved,inviteWirePerson].find(p=>p.id===id);
+    const person=[worldConfig.owner,...worldConfig.seeded,...approved].find(p=>p.id===id);
     if(!person)return;
     pin(id);
   },[approved,pin]);
@@ -61,9 +62,10 @@ export default function App(){
     <a className="skip-link" href="#people-control">Read the messages</a>
     <div className="scene" aria-hidden="true">{failed?<div className="scene-fallback"/>:<SceneBoundary onFailure={onFailure}><Suspense fallback={null}><World people={people} activeId={activeId} paused={paused||!!dialog} reduced={reduced} onMeshEnter={meshEnter} onMeshLeave={meshLeave} onCardEnter={cardEnter} onCardLeave={cardLeave} onSelect={select} onReady={onReady} onFailure={onFailure}/></Suspense></SceneBoundary>}</div>
     <div className="grain" aria-hidden="true"/><div className="edge-shade" aria-hidden="true"/>
+    {ready&&<GardenReadout animate={!reduced&&!paused&&!dialog}/>}
     {worldConfig.invitesOpen&&<header className="header"><button className="join-button" onClick={()=>openDialog('join')}><span className="join-label">Leave a message</span><span className="plus-icon" aria-hidden="true">+</span></button></header>}
     {!ready&&<div className="loading" role="status"><span className="loading-orb"/><span className="sr-only">Loading the garden</span></div>}
-    {failed&&<div className="fallback-note"><p>A quiet place for a thought.</p><button className="text-button" onClick={()=>openDialog('people')}>Read the flower messages</button></div>}
+    {failed&&<div className="fallback-note"><button className="text-button" onClick={()=>openDialog('people')}>Read the flower messages</button></div>}
     {/* Keyboard controls remain available without introducing persistent visual clutter. */}
     <nav className="quiet-tools" aria-label="Garden controls">
       <button id="people-control" aria-label="Read all messages" onClick={()=>openDialog('people')}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/></svg></button>

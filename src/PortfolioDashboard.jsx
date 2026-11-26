@@ -5891,22 +5891,15 @@ export default function PortfolioDashboard() {
     <div className="bl-intro">
       <style>{`
         .bl-intro {
-          position:relative; height:100vh; overflow:hidden; background:#000;
+          position:relative; height:100svh; overflow:hidden; background:#a7abc2;
           font-family:'Inter','Helvetica Neue',Arial,sans-serif;
         }
         .bl-enter {
           position:absolute; left:50%; bottom:9%; transform:translateX(-50%);
-          z-index:90; display:flex; flex-direction:column; align-items:center; gap:12px;
+          z-index:90; display:flex; align-items:center;
           background:none; border:0; padding:16px 26px; cursor:pointer;
           color:#eaf1f3; text-shadow:0 1px 14px rgba(4,16,26,.55);
         }
-        .bl-enter-name { font-size:17px; letter-spacing:-.4px; }
-        .bl-enter-line {
-          width:1px; height:26px;
-          background:linear-gradient(rgba(234,241,243,.7), rgba(234,241,243,0));
-          transition:height .45s cubic-bezier(.22,.72,.24,1);
-        }
-        .bl-enter:hover .bl-enter-line { height:40px; }
         .bl-enter-action {
           font-family:Georgia,'Times New Roman',serif; font-style:italic; font-size:18px;
           padding:9px 22px; border-radius:999px;
@@ -5937,8 +5930,6 @@ export default function PortfolioDashboard() {
       <StillworldHome />
 
       <button className="bl-enter" onClick={() => setEntered(true)}>
-        <span className="bl-enter-name">Deeksha Satapathy</span>
-        <span className="bl-enter-line" />
         <span className="bl-enter-action">Enter the studio</span>
       </button>
     </div>

@@ -5,15 +5,34 @@
 @media(max-height:620px) and (min-width:651px){.header{top:20px}.footer{bottom:20px}.world-caption{top:30%}.message{top:24%;max-height:65svh;overflow:auto}.message-text{font-size:20px}.dialog{max-height:calc(100svh - 24px)}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
-/* Immersive revision: the world and its single invitation fill the screen. */
-.world-app,.scene-fallback{background:#000}
+/* A cool lavender sky softens into the warm gray of the studio backdrop. */
+.world-app {
+  min-height: 0;
+  background:
+    linear-gradient(180deg, transparent 59%, rgba(43, 66, 52, .28) 68%,
+      #314938 83%, #253a2e 100%),
+    radial-gradient(ellipse at 53% 27%, rgba(232, 228, 246, .5), transparent 64%),
+    linear-gradient(180deg, #959bb6 0%, #c9c5da 43%, #969092 71%, #797275 100%);
+}
+.scene-fallback {
+  background: url('/garden-wide.webp') center bottom / cover no-repeat;
+  filter: brightness(1.23) saturate(1.1);
+}
+
+@media (min-width: 1024px) and (min-aspect-ratio: 5/4) {
+  .scene-fallback { background-size: 100% 86% }
+}
+
+@media (max-width: 650px) and (orientation: portrait) {
+  .scene-fallback { background-image: url('/garden-portrait.webp') }
+}
 .header{justify-content:flex-end;z-index:6}
 .join-button{color:#172f3b;gap:15px;font-size:14px}
 .join-label{display:inline}
 .plus-icon{border-color:rgba(25,48,63,.4);background:rgba(187,204,209,.08)}
 .grain{opacity:.115;mix-blend-mode:soft-light}
-.edge-shade{background:radial-gradient(ellipse at 50% 42%,transparent 42%,rgba(4,12,20,.08) 100%)}
-.loading{background:#000}
+.edge-shade{background:radial-gradient(ellipse at 50% 43%,transparent 42%,rgba(51,46,53,.14) 100%)}
+.loading{background:#a7abc2;color:#222431}
 .message{background:rgba(13,32,44,.64);border-color:rgba(179,207,218,.15);box-shadow:0 15px 75px rgba(0,10,22,.16)}
 .message-top,.dialog-header{justify-content:flex-end}
 .message-text{margin-top:8px}
@@ -29,3 +48,127 @@
 .flower-tooltip-name{margin:6px 0 0;font-size:10px;color:rgba(220,232,238,.82)}
 .flower-tooltip .type-cursor{font-size:9px;opacity:.65;animation:blink 1s steps(2) infinite}
 @media(max-width:650px){.header{top:26px}.join-label{display:inline;font-size:13px}.join-button{gap:12px}.message{bottom:36px;max-height:calc(100svh - 130px);background:rgba(13,32,44,.88)}.quiet-tools{bottom:15px;right:20px}.flower-tooltip{width:min(156px,62vw);padding:8px 10px}.flower-tooltip-body{font-size:10px;max-height:8em}}
+
+@font-face {
+  font-family: 'Stillworld LED';
+  src: url('/stillworld-led.woff') format('woff');
+  font-display: swap;
+}
+
+.garden-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  color: #f0f5e8;
+}
+
+.garden-markers {
+  position: absolute;
+  inset: 2.25% 1.45%;
+  display: grid;
+  grid-template: repeat(5, 4px) / repeat(5, 4px);
+  align-content: space-between;
+  justify-content: space-between;
+}
+
+.garden-markers span { background: #edf5e8; opacity: .65 }
+
+.garden-readout {
+  position: absolute;
+  top: 43%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: max-content max-content;
+  gap: 8px clamp(12px, 1.5vw, 24px);
+  align-items: baseline;
+  margin: 0;
+}
+
+.garden-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.garden-field--name,
+.garden-field--job { justify-self: end }
+
+.garden-field dt {
+  color: #24232c;
+  font: 400 clamp(.875rem, 1.15vw, 1.05rem)/1.2 var(--serif);
+  text-shadow: 0 0 5px rgba(227, 223, 242, .95);
+  white-space: nowrap;
+}
+
+.garden-field dd { margin: 0; min-width: 0 }
+
+.garden-field__display {
+  display: inline-block;
+  padding: .09em .18em .05em;
+  background: rgba(3, 11, 8, .91);
+  color: #f1f9ed;
+  font: 400 clamp(1.15rem, 2.52vw, 2.6rem)/1.02 'Stillworld LED', 'Courier New', monospace;
+  white-space: nowrap;
+  text-shadow: 0 0 .07em rgba(226, 251, 220, .22);
+}
+
+.garden-field--rating {
+  position: absolute;
+  top: 32svh;
+  left: 60%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.garden-field--rating dt {
+  color: #e2eadb;
+  text-shadow: 0 1px 4px #20222a, 0 0 8px #20222a;
+  font: 400 .75rem/1.2 Arial, sans-serif;
+}
+
+.garden-field--rating .garden-field__display {
+  background: transparent;
+  padding: 0;
+  font-size: clamp(1.2rem, 1.8vw, 1.6rem);
+  text-shadow: 0 1px 7px #0b1710;
+}
+
+.garden-field__stars {
+  margin-right: .32em;
+  color: #f1f9ed;
+  font: 400 .63em/1 Arial, sans-serif;
+  vertical-align: .09em;
+  letter-spacing: .04em;
+}
+
+.world-app .fallback-note {
+  position: absolute;
+  inset: auto auto 24px 4.2%;
+  transform: none;
+  text-align: left;
+}
+
+@media (max-width: 800px) {
+  .garden-readout {
+    top: 22%;
+    left: 6%;
+    right: 6%;
+    transform: none;
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 9px;
+  }
+
+  .garden-field { justify-self: start; gap: 6px }
+  .garden-field--name { flex-wrap: wrap; gap: 4px 6px }
+  .garden-field__display { font-size: clamp(1.07rem, 4.3vw, 1.65rem) }
+  .garden-field--hobbies .garden-field__display { font-size: clamp(.96rem, 3.85vw, 1.5rem) }
+  .garden-field--rating { top: 43svh; left: 63% }
+}
+
+@media (max-height: 500px) {
+  .garden-readout { top: 27% }
+  .garden-field--rating { top: 45svh }
+}

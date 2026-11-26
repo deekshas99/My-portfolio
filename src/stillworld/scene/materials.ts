@@ -123,7 +123,7 @@ export function createFoliageMaterial(palette: GlyphPalette, options: FoliageOpt
 
 export const leafPalette: GlyphPalette = { silver: '#8a97a0', cool: '#4d6672', gold: '#d6a049', night: '#101d26' };
 export const bloomPalette: GlyphPalette = { silver: '#e9c877', cool: '#b8853c', gold: '#f2d68d', night: '#121e26' };
-export const backdropPalette: GlyphPalette = { silver: '#5d7f92', cool: '#3d5f75', gold: '#6d7f88', night: '#0d1a23' };
+export const backdropPalette: GlyphPalette = { silver: '#5e8270', cool: '#426358', gold: '#788460', night: '#142c22' };
 
 /* ----------------------------------------------------------------
    message flowers

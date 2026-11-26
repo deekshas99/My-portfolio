@@ -9,9 +9,9 @@ export default function Undergrowth({ mobile, paused, reduced }: UndergrowthProp
   const time = useRef(0);
   const geometry = useMemo(() => buildGarden(mobile), [mobile]);
   const materials = useMemo(() => ({
-    foliage: createFoliageMaterial(leafPalette, { sway: .04, root: .34, grid: [9, 52], wire: .14, dim: .74, warmth: 1.7 }),
-    blooms: createFoliageMaterial(bloomPalette, { sway: .045, glow: .38, root: .8, grid: [4, 9], wire: .22, warmth: 3 }),
-    backdrop: createFoliageMaterial(backdropPalette, { sway: .014, fog: .028, root: .85, dim: .7, warmth: .2, grid: [3, 18], wire: .3 }),
+    foliage: createFoliageMaterial(leafPalette, { sway: .04, root: .52, glow: .12, grid: [9, 52], wire: .19, dim: 1.02, warmth: 1.7 }),
+    blooms: createFoliageMaterial(bloomPalette, { sway: .045, glow: .53, root: .86, grid: [4, 9], wire: .25, warmth: 3 }),
+    backdrop: createFoliageMaterial(backdropPalette, { sway: .014, fog: .028, root: .85, dim: .86, warmth: .2, grid: [3, 18], wire: .3 }),
   }), []);
 
   useEffect(() => () => {

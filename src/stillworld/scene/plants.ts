@@ -286,6 +286,9 @@ export function buildGarden(mobile: boolean): GardenGeometry {
     bake(backdrop, skeletonPlant(r), transform((r() * 2 - 1) * 12, -.1, z, scale, (r() - .5) * .4, (r() - .5) * .1), scale);
   }
 
+  // Short tufts cover the low gaps while leaving the existing bloom layout intact.
+  scatter(r, many(220), grassTuft, foliage, .43, .26);
+
   return { foliage: toGeometry(foliage), blooms: toGeometry(blooms), backdrop: toGeometry(backdrop) };
 }
 
